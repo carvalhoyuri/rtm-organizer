@@ -70,13 +70,14 @@ export async function amigosPorShow(edicaoId: string, grupoId: string): Promise<
 }
 
 export async function getAgenda(usuarioId: string, edicaoId: string, grupoId: string): Promise<Agenda> {
-  const favoritos = await db.favorito.findMany({
-    where: { usuarioId, show: { edicaoId } },
-    include: { show: { include: { palco: true, dia: true } } },
-    orderBy: [{ show: { dia: { data: "asc" } } }, { show: { horarioInicio: "asc" } }],
-  });
-
-  const amigos = await amigosPorShow(edicaoId, grupoId);
+  const [favoritos, amigos] = await Promise.all([
+    db.favorito.findMany({
+      where: { usuarioId, show: { edicaoId } },
+      include: { show: { include: { palco: true, dia: true } } },
+      orderBy: [{ show: { dia: { data: "asc" } } }, { show: { horarioInicio: "asc" } }],
+    }),
+    amigosPorShow(edicaoId, grupoId),
+  ]);
 
   const itens: ItemAgenda[] = favoritos.map((f) => ({
     favoritoId: f.id,

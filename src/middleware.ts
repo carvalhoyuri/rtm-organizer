@@ -23,7 +23,10 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  // getSession renova o token quando expirado, mas não faz chamada de rede se ele ainda é
+  // válido (getUser faria, em TODO request). Não é checagem de autorização: isso continua
+  // sendo feito com getUser em src/lib/session.ts, que valida no servidor do Supabase.
+  await supabase.auth.getSession();
 
   return response;
 }

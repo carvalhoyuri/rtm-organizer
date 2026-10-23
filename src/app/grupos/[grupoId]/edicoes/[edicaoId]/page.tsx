@@ -22,22 +22,28 @@ export default async function EdicaoPage({
   const tab: Tab = sp.tab === "agenda" ? "agenda" : "programacao";
 
   // A Edição é global (ver ADR 0004) — qualquer Membro de qualquer Grupo pode ver.
-  const edicao = await db.edicao.findUnique({ where: { id: edicaoId } });
+  // Tudo em paralelo: cada consulta em sequência custa uma viagem inteira até o banco.
+  const [edicao, dados] = await Promise.all([
+    db.edicao.findUnique({ where: { id: edicaoId } }),
+    tab === "programacao"
+      ? Promise.all([
+          db.show.findMany({
+            where: { edicaoId, status: "ATIVO" },
+            include: { palco: true, dia: true },
+            orderBy: [{ dia: { data: "asc" } }, { horarioInicio: "asc" }],
+          }),
+          db.favorito.findMany({ where: { usuarioId: usuario.id, show: { edicaoId } } }),
+          amigosPorShow(edicaoId, grupoId),
+        ])
+      : null,
+  ]);
   if (!edicao) notFound();
 
   let programacaoShows: ShowProgramacao[] = [];
   let agenda: Awaited<ReturnType<typeof getAgenda>> | null = null;
 
-  if (tab === "programacao") {
-    const [shows, meusFavoritos, amigos] = await Promise.all([
-      db.show.findMany({
-        where: { edicaoId, status: "ATIVO" },
-        include: { palco: true, dia: true },
-        orderBy: [{ dia: { data: "asc" } }, { horarioInicio: "asc" }],
-      }),
-      db.favorito.findMany({ where: { usuarioId: usuario.id, show: { edicaoId } } }),
-      amigosPorShow(edicaoId, grupoId),
-    ]);
+  if (dados) {
+    const [shows, meusFavoritos, amigos] = dados;
     const favoritadoIds = new Set(meusFavoritos.map((f) => f.showId));
     programacaoShows = shows.map((show) => ({
       id: show.id,
@@ -50,7 +56,7 @@ export default async function EdicaoPage({
       favoritado: favoritadoIds.has(show.id),
       amigos: (amigos.get(show.id) ?? []).filter((nome) => nome !== usuario.nome),
     }));
-  } else if (tab === "agenda") {
+  } else {
     agenda = await getAgenda(usuario.id, edicaoId, grupoId);
   }
 

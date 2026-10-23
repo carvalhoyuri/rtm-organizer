@@ -13,12 +13,11 @@ export async function alternarFavoritoAction(formData: FormData) {
   if (!showId) return;
 
   // Favorito é do Usuário e vale em todos os Grupos (ver ADR 0004) — basta o Show existir.
-  const show = await db.show.findUnique({ where: { id: showId } });
+  const [show, existente] = await Promise.all([
+    db.show.findUnique({ where: { id: showId } }),
+    db.favorito.findUnique({ where: { usuarioId_showId: { usuarioId: usuario.id, showId } } }),
+  ]);
   if (!show) return;
-
-  const existente = await db.favorito.findUnique({
-    where: { usuarioId_showId: { usuarioId: usuario.id, showId } },
-  });
 
   if (existente) {
     await db.favorito.delete({ where: { id: existente.id } });
