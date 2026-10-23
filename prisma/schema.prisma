@@ -1,0 +1,153 @@
+// Ver CONTEXT.md na raiz do projeto para o glossário do domínio.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Conexão direta (sem pgbouncer), só usada pra `prisma db push`/`migrate` —
+  // ver .env.example.
+  directUrl = env("DIRECT_URL")
+}
+
+/// Perfil da pessoa autenticada via Supabase Auth. O id é o MESMO id de
+/// auth.users (não tem @default aqui) — a linha é criada por um trigger no
+/// Postgres quando a conta é criada (email/senha ou Google), não pelo Prisma.
+/// Ver supabase/sql/handle_new_user.sql.
+model Usuario {
+  id       String   @id @db.Uuid
+  nome     String
+  email    String   @unique
+  criadoEm DateTime @default(now())
+
+  favoritos     Favorito[]
+  gruposCriados Grupo[]       @relation("GrupoCriador")
+  participacoes MembroGrupo[]
+
+  @@index([nome])
+}
+
+/// O espaço compartilhado entre um Usuário e seus amigos — limite de
+/// visibilidade dos Favoritos (não da programação, que é global — ver ADR
+/// 0004). Ver "Grupo" em CONTEXT.md e ADR 0003.
+model Grupo {
+  id            String   @id @default(cuid())
+  nome          String
+  /// Token do link de convite (ver "Convite" em CONTEXT.md) — único e
+  /// permanente por Grupo, não escopado por Edição.
+  codigoConvite String   @unique @default(cuid())
+  criadoPorId   String   @db.Uuid
+  criadoEm      DateTime @default(now())
+
+  criadoPor Usuario       @relation("GrupoCriador", fields: [criadoPorId], references: [id], onDelete: Cascade)
+  membros   MembroGrupo[]
+}
+
+/// Relação Usuário-Grupo (quem é membro de qual Grupo). Ver "Convite" em
+/// CONTEXT.md: a linha é criada quando o Usuário visita o link de convite.
+model MembroGrupo {
+  id        String   @id @default(cuid())
+  grupoId   String
+  usuarioId String   @db.Uuid
+  entrouEm  DateTime @default(now())
+
+  grupo   Grupo   @relation(fields: [grupoId], references: [id], onDelete: Cascade)
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([grupoId, usuarioId])
+}
+
+/// Programação de um ano do festival. Global: a mesma pra todos os Grupos,
+/// mantida só pelo admin (ADMIN_EMAIL). Ver ADR 0004.
+model Edicao {
+  id       String   @id @default(cuid())
+  nome     String
+  ano      Int
+  criadoEm DateTime @default(now())
+
+  revisoes Revisao[]
+  palcos   Palco[]
+  dias     Dia[]
+  shows    Show[]
+}
+
+/// Resultado de um upload de PDF numa Edição. Ver "Revisão" em CONTEXT.md.
+model Revisao {
+  id           String   @id @default(cuid())
+  edicaoId     String
+  arquivoNome  String
+  criadoEm     DateTime @default(now())
+
+  edicao       Edicao @relation(fields: [edicaoId], references: [id], onDelete: Cascade)
+
+  showsCriados     Show[] @relation("ShowCriadoNaRevisao")
+  showsAtualizados Show[] @relation("ShowAtualizadoNaRevisao")
+}
+
+model Palco {
+  id       String @id @default(cuid())
+  edicaoId String
+  nome     String
+
+  edicao   Edicao @relation(fields: [edicaoId], references: [id], onDelete: Cascade)
+  shows    Show[]
+
+  @@unique([edicaoId, nome])
+}
+
+model Dia {
+  id       String   @id @default(cuid())
+  edicaoId String
+  data     DateTime
+
+  edicao   Edicao @relation(fields: [edicaoId], references: [id], onDelete: Cascade)
+  shows    Show[]
+
+  @@unique([edicaoId, data])
+}
+
+/// Uma apresentação específica: Artista + Palco + Dia. Ver "Show" em CONTEXT.md.
+model Show {
+  id             String   @id @default(cuid())
+  edicaoId       String
+  artista        String
+  palcoId        String
+  diaId          String
+  horarioInicio  String // "HH:mm"
+  horarioFim     String? // "HH:mm"
+  /// ATIVO | CANCELADO
+  status         String   @default("ATIVO")
+  criadoEm       DateTime @default(now())
+  atualizadoEm   DateTime @updatedAt
+
+  criadoNaRevisaoId     String?
+  atualizadoNaRevisaoId String?
+
+  edicao             Edicao   @relation(fields: [edicaoId], references: [id], onDelete: Cascade)
+  palco              Palco    @relation(fields: [palcoId], references: [id])
+  dia                Dia      @relation(fields: [diaId], references: [id])
+  criadoNaRevisao     Revisao? @relation("ShowCriadoNaRevisao", fields: [criadoNaRevisaoId], references: [id])
+  atualizadoNaRevisao Revisao? @relation("ShowAtualizadoNaRevisao", fields: [atualizadoNaRevisaoId], references: [id])
+
+  favoritos Favorito[]
+
+  @@unique([artista, palcoId, diaId])
+  @@index([edicaoId])
+}
+
+/// Relação Usuário-Show. Ver "Favorito" em CONTEXT.md.
+model Favorito {
+  id        String   @id @default(cuid())
+  usuarioId String   @db.Uuid
+  showId    String
+  /// CONFIRMADO | ALTERADO | CANCELADO
+  status    String   @default("CONFIRMADO")
+  criadoEm  DateTime @default(now())
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  show    Show    @relation(fields: [showId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, showId])
+}

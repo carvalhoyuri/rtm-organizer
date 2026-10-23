@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env
+.env*.local
+prisma/dev.db
+prisma/dev.db-journal
+uploads
+npm-debug.log*
+*.tsbuildinfo
+.claude
+.agents
+docs
+skills-lock.json
